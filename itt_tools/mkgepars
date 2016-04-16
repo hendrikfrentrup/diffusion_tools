@@ -1,0 +1,10 @@
+#!/bin/bash
+
+for i in `ls *[^'ge']_1.res`
+do
+  tag=${i%_1.res}
+  if ! [ -e ${tag}_ge.par ]
+  then
+    res2gepar ${tag}.par ${tag}_1.res > ${tag}_ge.par
+  fi
+done

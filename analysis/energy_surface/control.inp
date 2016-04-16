@@ -1,0 +1,35 @@
+# Control file for NEMD simulation
+ensemble            nvt_gau                   # This is the ensemble
+nTimeSteps          2000000                   # Total number of time steps
+nEquilibration       100000                   # Time steps for equilibration period
+nSample               10000                   # Frecuency to write partial averages in output file
+nProperties             200                   # Frecuency to write the history (evolution) of the properties
+timeStep                  0.005               # Time step
+temperature               1.500               # Temperature of particles in the wall
+trajectory?               t                   # Do you want to have a history file?
+traj_options    1800000  20    0              # History file options. See Note 1
+-------- Velocity profile options. The profile are measure always in the x-direction
+profiles?                 t                   # Do you want velocity, density and temperature profiles ?
+frec_of_profiles         10                   # How often do you want to sample the profiles?
+number_of_bins          200                   # Number of bins for the profiles
+pore_dimensions     8.299014 8.735805 1.50358 # Information about the pore 
+                                            
+
+#Note 1
+The options for the trajectory file are
+- Firts number: Time step at which the history file is started to be writen 
+- Second number: Frecuency to write the history file
+- Third number: Content option:   0 ---> position
+                                  1 ---> position and velocities
+                                  2 ---> position, velocities, and forces
+#Note 2
+Pore information has three variable
+First is where the pore starts in x direction
+Second is the depth of the pore, i.e. depth of the simulation box in case of a slit pore
+Third is the pore width that is accessible to the fluid, aka H*
+
+#Note 3
+The possible ensembles are:
+- nvt_gau (nvt ensemble using the Evans thermostat)
+- nvt_ber (nvt ensemble using the Berendsen thermosta)
+- nvt_nos (nvt ensemble using the Nose-Hover thermostat)

@@ -1,0 +1,214 @@
+#!/usr/bin/perl
+# Perl-Skript zur Erzeugung einer Parameter-Datei (.par)
+# für einen ms2 GE-Lauf aus einer vorgegebenen Parameter-Datei
+# und der dazugehörigen Ergebnis-Datei (.res) des Flüssiglaufs
+#
+# Aufruf: res2gepar <.par-file> <.res-file>
+#
+# 03/12/04: + Liest Parameter 'VapMolarFract' -wenn vorhanden- ein und
+#             setzt die Startzusammensetzung des Dampfes entsprechend.
+#             Default: äquimolar
+#           + Übernimmt Einstellung des CutoffMode aus Flüssiglauf.
+
+
+# Parameter: *************************************
+$SchritteVorEq =  1000;
+$SchritteEq    =  5000;
+$SchritteProd  = 50000;
+$ResultFreq    =   100;
+$ErrorsFreq    = 10000;
+$teilchenzahl  =   500;
+$defaultdichte =     1.0;
+# Ende Parameter *********************************
+
+$usage = " Aufruf: $0 <.par-file> <.res-file>\n";
+
+if( $#ARGV != 1 ) { die($usage); }
+
+open(PAR, "< $ARGV[0]") || die(" Konnte Datei $ARGV[0] nicht öffnen.");
+open(RES, "< $ARGV[1]") || die(" Konnte Datei $ARGV[1] nicht öffnen.");
+
+# Prüfen, ob Daten in reduzierten oder SI Einheiten angegeben werden
+# $reduced = 1, falls reduzierte Einheiten
+# $reduced = 0, falls SI Einheiten
+while(<PAR>) {
+  if( !/^#/ && /Units/ ) { last; }
+}
+chop;
+($bezeichner, $wert) = split /=/;
+$reduced = 1 if( $wert =~ /reduced/i );
+close(PAR);
+open(PAR, "< $ARGV[0]") || die(" Konnte Datei $ARGV[0] nicht öffnen.");
+
+# Lesen der Simulationsdaten aus .res-file
+while(<RES>) {
+  if( /^Molar fraction/ ) { last; }
+}
+$i = 0;
+do {
+  chop;
+  ($bezeichner, $molenbruch[$i]) = split(/:/);
+  ($_, $_, $_, $potmodel[$i], $_) = split(' ', $bezeichner);
+  $_ = <RES>;
+  $i++;
+} while /^Molar fraction/;
+$komponenten = $i;
+
+while(<RES>) {
+  if( /^Initial pressure/ ) { last; }
+}
+$_ = <RES> if( $reduced != 1 );
+chop;
+($bezeichner, $druck) = split(/:/);
+
+while(<RES>) {
+  if( /^Density/ ) { last; }
+}
+($bezeichner, $wert) = split(/:/);
+($reddichte, $redvardichte) = split(' ', $wert);
+$_ = <RES> if( $reduced != 1 );
+chop;
+($bezeichner, $wert) = split(/:/);
+($dichte, $vardichte) = split(' ', $wert);
+
+while(<RES>) {
+  if( /^Enthalpy/ ) { last; }
+}
+$_ = <RES> if( $reduced != 1 );
+chop;
+($bezeichner, $wert) = split(/:/);
+($enthalpie, $varenthalpie) = split(' ', $wert);
+
+for( $i = 0; $i < $komponenten; $i++ ) {
+  while(<RES>) {
+    if( /^Chemical potential/ ) { last; }
+  }
+  chop;
+  ($bezeichner, $wert) = split(/:/);
+  ($chempo[$i], $varchempo[$i]) = split(' ', $wert);
+}
+
+if( $komponenten > 1 ) {
+  for( $i = 0; $i < $komponenten; $i++ ) {
+    while(<RES>) {
+      if( /^Partial molar volume/ ) { last; }
+    }
+    chop;
+    ($bezeichner, $wert) = split(/:/);
+    ($partmolvol[$i], $varpartmolvol[$i]) = split(' ', $wert);
+  }
+}
+else {
+  $partmolvol[0] = 1 / $reddichte;
+  $varpartmolvol[0] = $redvardichte / ( $reddichte * $reddichte );
+}
+
+while(<RES>) {
+  if( /^Isothermal compressibility/ ) { last; }
+}
+$_ = <RES> if( $reduced != 1 );
+chop;
+die("beta_T in SI-Einheiten nicht in $ARGV[1] gefunden!\n") unless( /:/ );
+($bezeichner, $wert) = split(/:/);
+($beta_t, $varbeta_t) = split(' ', $wert);
+
+while(<RES>) {
+  if( /^dH/ ) { last; }
+}
+$_ = <RES> if( $reduced != 1 );
+chop;
+die("dH/dP in SI-Einheiten nicht in $ARGV[1] gefunden!\n") unless( /:/ );
+($bezeichner, $wert) = split(/:/);
+($dhdp, $vardhdp) = split(' ', $wert);
+
+# Ausgabe der Daten analog .par-file
+while(<PAR>) {
+  if( !/^#/ && /Ensemble/ ) { last; }
+  print;
+}
+printf "Ensemble     =      GE\n";
+printf "Simulation   =      MC\n";
+printf "Acceptance   =       0.5\n";
+printf "NVTSteps     =  %6i\n", $SchritteVorEq;
+printf "NPTSteps     =  %6i\n", $SchritteEq;
+printf "RunSteps     =  %6i\n", $SchritteProd;
+printf "ResultFreq   =  %6i\n", $ResultFreq;
+printf "ErrorsFreq   =  %6i\n", $ErrorsFreq;
+printf "VisualFreq   =       0\n";
+
+while(<PAR>) {
+  if( !/^#/ && /CutoffMode/ ) { last; }
+}
+print;
+
+printf "NEnsembles   =       1\n";
+printf "\n";
+printf "#Flüssigkeit\n";
+
+while(<PAR>) {
+  if( !/^#/ && /Temperature/ ) { last; }
+}
+print;
+
+while(<PAR>) {
+  if( !/^#/ && /Pressure/ ) { last; }
+  print;
+}
+printf "Pressure0    =      %6.3f\n", $druck;
+printf "LiqDensity   =      %7.4f\n", $dichte;
+printf "VarDensity   =      %7.4f\n", $vardichte;
+printf "LiqEnthalpy  =  %8.1f\n", $enthalpie;
+printf "VarEnthalpy  =     %5.1f\n", $varenthalpie;
+printf "LiqBetaT     =      %9.6f\n", $beta_t;
+printf "VarBetaT     =      %9.6f\n", $varbeta_t;
+printf "LiqdHdP      =      %9.6f\n", $dhdp;
+printf "VardHdP      =      %9.6f\n", $vardhdp;
+printf "\n";
+
+while(<PAR>) {
+  if( !/^#/ && /VapDensity/ ) {
+    ($bezeichner, $dampfdichte) = split(/=/);
+    while(<PAR>) {
+      if( !/^#/ && /NComponents/ ) { last; }
+    }
+    last;
+  }
+  if( !/^#/ && /NComponents/ ) {
+    $dampfdichte = $defaultdichte;
+    last;
+  }
+}
+printf "#Dampf\n";
+printf "Density      =      %6.3f\n", $dampfdichte;
+printf "NParticles   =     %3i\n", $teilchenzahl;
+printf "NComponents  =      %2i\n", $komponenten;
+
+for( $i = 0; $i < $komponenten; $i++ ) {
+  while(<PAR>) {
+    if( !/^#/ && /MolarFract/ ) { last; }
+  }
+  $_=<PAR>;
+  if( !/^#/ && /VapMolarFract/ ) {
+    ($bezeichner, $dampfkonz) = split(/=/);
+    $_=<PAR>;
+  }
+  else {
+    $dampfkonz = 1.0/$komponenten;
+  }
+  print  "\n";
+  printf "PotModel     = %10s\n", $potmodel[$i];
+  printf "MolarFract   =       %6.4f\n", $dampfkonz;
+  printf "LiqMolarFract=       %6.4f\n", $molenbruch[$i];
+  printf "ChemPot      =      %6.3f\n", $chempo[$i];
+  printf "VarChemPot   =      %6.3f\n", $varchempo[$i];
+  printf "PartMolVol   =      %7.4f\n", $partmolvol[$i];
+  printf "VarPartMolVol=      %7.4f\n", $varpartmolvol[$i];
+}
+print;
+
+while(<PAR>) {
+  print;
+}
+
+close(PAR);
+close(RES);

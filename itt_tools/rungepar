@@ -1,0 +1,93 @@
+#!/usr/bin/perl
+# Skript zur Kontrolle eines ms2 GE-Laufs
+#
+# Aufruf: rungepar <.par-file>
+#
+
+# Parameter: *************************************
+$SollPart     = 500;
+$UntereGrenze = 400;
+$ObereGrenze  = 600;
+$RunSteps     = 100000;
+$ms2exe       = "ms2.linux";
+# Ende Parameter *********************************
+
+$usage = " Aufruf: $0 <.par-file>\n";
+
+if( $#ARGV != 0 ) { die($usage); }
+$tag = substr($ARGV[0], 0, rindex($ARGV[0], ".par"));
+
+system("mv ${tag}.par ${tag}.par.old") and die(" Fehler bei mv.\n");
+open(PAR, "< ${tag}.par.old") || die("${tag}.par.old konnte nicht geöffnet werden");
+open(OUT, "> ${tag}.par") || die("${tag}.par konnte nicht geöffnet werden");
+while(<PAR>) {
+  if( /^RunSteps/ ) {
+    # chomp;
+    # ($_, $RunSteps) = split('=');
+    print OUT "RunSteps     =       1\n";
+  }
+  else {
+    print OUT;
+  }
+}
+
+while(1) {
+  system("$ms2exe ${tag}.par");
+  open(LOG, "< ${tag}.log") || die("${tag}.log konnte nicht geöffnet werden.\n");
+  $SimulationCompleted = 0;
+  while(<LOG>) {
+    if( /^ERROR:/ ) { die("Fehler in ms2.\n"); }
+    if( /^Simulation completed/ ) { $SimulationCompleted = 1; }
+  }
+  close LOG;
+  if( !$SimulationCompleted ) { die("Fehler in ms2.\n"); }
+
+  open(RUN, "< ${tag}_1.run") || die("${tag}_1.run konnte nicht geöffnet werden");
+  while(<RUN>) {
+    @_ = split(' ');
+    if( $_[6] =~ /\d\.\d/ ) {
+      $numpart = $_[6];
+      splice(@_, 0, 7);
+      @fractions = @_;
+    }
+  }
+  close RUN;
+  if( $numpart > $UntereGrenze && $numpart < $ObereGrenze ) { last; }
+
+  system("mv ${tag}.par ${tag}.par.old") and die(" Fehler bei mv.\n");
+  open(PAR, "< ${tag}.par.old") || die("${tag}.par.old konnte nicht geöffnet werden");
+  open(OUT, "> ${tag}.par") || die("${tag}.par konnte nicht geöffnet werden");
+  $i = 0;
+  while(<PAR>) {
+    if( /^Density/ ) {
+      chomp;
+      ($_, $olddens) = split(/=/);
+      $newdens = $olddens * $numpart / $SollPart;
+      print OUT "Density      =       $newdens\n";
+    }
+    elsif( /^MolarFract/ ) {
+      print OUT "MolarFract   =       $fractions[$i]\n";
+      $i++;
+    }
+    else {
+      print OUT;
+    }
+  }
+  close PAR;
+  close OUT;
+}
+
+system("mv ${tag}.par ${tag}.par.old") and die(" Fehler bei mv.\n");
+open(PAR, "< ${tag}.par.old") || die("${tag}.par.old konnte nicht geöffnet werden");
+open(OUT, "> ${tag}.par") || die("${tag}.par konnte nicht geöffnet werden");
+while(<PAR>) {
+  if( /^RunSteps/ ) {
+    print OUT "RunSteps     =  $RunSteps\n";
+  }
+  else {
+    print OUT;
+  }
+}
+close PAR;
+close OUT;
+system("$ms2exe ${tag}.rst");

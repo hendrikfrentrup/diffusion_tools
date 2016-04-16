@@ -1,0 +1,23 @@
+2             Number of diferent species (wall's particles are also counted here)
+# Details of species 1
+412           Number of molecules of species 1
+1             Number of sites in each molecules of species 1
+N1            Name of the sites
+1.0           Mass of the sites
+1.0   30.0    Equilibrium distance and spring constant for the bond potential
+# Details of walls
+1200          Number of particles in the walls
+W1            Name of particles in the walls
+1.0           Mass of the particles in the wall
+150.00        Harmonic restoring force 
+# Interaction between particles( site1, site2, type, epsilon, sigma, rc )
+N1      N1      lj      1.0       1.0     2.50
+W1      W1      wca     1.0       1.0     0.00 
+N1      W1      wca     1.0       1.0     2.50
+# Global cut-off and Verlet list width
+2.5           Cut-off radius
+1.0           Verlet list width
+t             Verlet list ?    
+# external field: phi=xi*coordinate. The field is applied always in the z-direction
+3.0           Region of the external force (at the final of one of the directions
+0.1           Magnitude of xi

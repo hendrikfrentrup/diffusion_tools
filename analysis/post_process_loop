@@ -1,0 +1,12 @@
+#!/bin/bash
+
+for sys in WCA LJ EPS2; do
+ for pore in h1.5 h4.0; do
+  for rho in rho001 rho01 rho05; do
+    cd ~/molsim/md-nemd/adsor/$sys/$pore/$rho/
+        ../../../psGetOutput.sh
+	../../../psGradFit.sh
+  done;
+ done;
+done;
+

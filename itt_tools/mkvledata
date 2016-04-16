@@ -1,0 +1,16 @@
+#!/bin/bash
+
+if [ -e VLEDATA ]
+then
+  rm VLEDATA
+fi
+
+for i in `ls ???_1.res`
+do
+  if [ -e ${i%_1.res}_ge_1.res ]
+  then
+    res2vledata ${i%_1.res}_ge_1.res >> VLEDATA
+  else
+    res2vledata $i >> VLEDATA
+  fi
+done

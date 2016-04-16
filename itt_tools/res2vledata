@@ -1,0 +1,125 @@
+#!/usr/bin/perl
+# Perl-Skript zur Extraktion von VLE-Daten aus einer vorgegebenen
+# Ergebnis-Datei (.res) eines Nulldruck- oder GrandEquilibrium-Laufs
+#
+# Aufruf: res2vledata <.res-file>
+#
+# Der VLE-Datensatz wird auf der Standardausgabe ausgegeben.
+#
+# Parameter für Ausgabe:
+# $reduced = 1, falls reduzierte Einheiten
+# $reduced = 0, falls SI Einheiten
+$reduced = 0;
+# Ende Parameter
+
+$usage = " Aufruf: $0 <.res-file>\n";
+
+if( $#ARGV != 0 ) { die($usage); }
+
+open(RES, "< $ARGV[0]") || die(" Konnte Datei $ARGV[0] nicht öffnen.");
+
+while(<RES>) {
+  if( /^Ensemble type/ ) { last; }
+}
+chop;
+($bezeichner, $ensemble) = split(/:/);
+
+if( $ensemble =~ /GrandEquilibrium/ )
+{ #GrandEquilibrium-Lauf (VLE)
+
+  while(<RES>) {
+    if( /^PHASE EQUILIBRIA DATA/ ) { last; }
+  }
+
+  while(<RES>) {
+    if( /^Simulation temperature/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $temperatur) = split(/:/);
+
+#   while(<RES>) {
+#     if( /^Liquid molar fraction/ ) { last; }
+#   }
+#   chop;
+#   ($bezeichner, $fluessigmolenbruch) = split(/:/);
+
+  while(<RES>) {
+    if( /^Vapor pressure/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $wert) = split(/:/);
+  ($dampfdruck, $vardampfdruck) = split(' ', $wert);
+
+  while(<RES>) {
+    if( /^Liquid density/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $wert) = split(/:/);
+  ($fluessigdichte, $varfluessigdichte) = split(' ', $wert);
+
+  while(<RES>) {
+    if( /^Vapor density/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $wert) = split(/:/);
+  ($dampfdichte, $vardampfdichte) = split(' ', $wert);
+
+  while(<RES>) {
+    if( /^Liquid enthalpy/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $wert) = split(/:/);
+  ($fluessigenthalpie, $varfluessigenthalpie) = split(' ', $wert);
+  $fluessigenthalpie /= 1000;
+  $varfluessigenthalpie /= 1000;
+
+  while(<RES>) {
+    if( /^Vapor enthalpy/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $wert) = split(/:/);
+  ($dampfenthalpie, $vardampfenthalpie) = split(' ', $wert);
+  $dampfenthalpie /= 1000;
+  $vardampfenthalpie /= 1000;
+
+}
+else { #Nulldrucksimulation
+
+  while(<RES>) {
+    if( /^Initial temperature/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $temperatur) = split(/:/);
+
+  while(<RES>) {
+    if( /^Density/ ) { last; }
+  }
+  $_ = <RES> if( $reduced != 1 );
+  chop;
+  ($bezeichner, $wert) = split(/:/);
+  ($fluessigdichte, $varfluessigdichte) = split(' ', $wert);
+
+  $dampfdruck = 0.;
+  $vardampfdruck = 0.;
+  $dampfdichte = 0.;
+  $vardampfdichte = 0.;
+  $fluessigenthalpie = 0.;
+  $varfluessigenthalpie = 0.;
+  $dampfenthalpie = 0.;
+  $vardampfenthalpie = 0.;
+
+}
+
+close(RES);
+
+printf "%5.1f %8.5f %8.5f %8.4f %8.5f %8.5f %8.5f %9.4f %7.4f %8.4f %7.4f\n",
+  $temperatur, $dampfdruck, $vardampfdruck, $fluessigdichte,
+  $varfluessigdichte, $dampfdichte, $vardampfdichte, $fluessigenthalpie,
+  $varfluessigenthalpie, $dampfenthalpie, $vardampfenthalpie;

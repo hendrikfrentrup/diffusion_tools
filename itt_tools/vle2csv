@@ -1,0 +1,5 @@
+#!/bin/sh
+#
+# Wandelt einzelne VLE-Datensätze in eine Excel-lesbare Datei um
+#
+tail -qn 1 *.VLE|sed y/./,/|sed y/" "/";"/|tr -s ";"|sed s/^";"// >VLEDATA.csv

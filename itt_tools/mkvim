@@ -1,0 +1,40 @@
+#!/usr/bin/perl
+$usage = " Aufruf: $0 <.pm-file>\n";
+
+if( $#ARGV != 0 ) { die($usage); }
+
+$vim = $ARGV[0];
+$vim =~ s/.pm/.vim/;
+
+open(PM, "< $ARGV[0]") || die(" Konnte Datei $ARGV[0] nicht öffnen.");
+open(VIM, "> $vim") || die(" Konnte Datei $vim nicht öffnen.");
+
+while(<PM>) {
+  if( /SiteType/ && /LJ126/ ) { last; }
+}
+while(<PM>) {
+  if( /NSites/ ) { last; }
+}
+chop;
+($dummy, $anz) = split(/=/);
+
+for( $i = 0; $i < $anz; $i++ ) {
+  while(<PM>) {
+    if( /x/ ) { ($dummy, $x) = split(/=/); }
+    if( /y/ ) { ($dummy, $y) = split(/=/); }
+    if( /z/ ) { ($dummy, $z) = split(/=/); }
+    if( /sigma/ ) { ($dummy, $sigma) = split(/=/); last; }
+  }
+  printf VIM "~  1 LJ %7.4f %7.4f %7.4f %7.4f  2\n", $x, $y, $z, $sigma;
+}
+
+print VIM "\n";
+print VIM "#   10.0\n";
+print VIM "!  1 500 500 500    0    0    0  999\n";
+print VIM "\n";
+print VIM "##\n";
+
+close(PM);
+close(VIM);
+
+print " Datei $vim erfolgreich erstellt.\n";

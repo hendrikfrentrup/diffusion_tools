@@ -1,0 +1,377 @@
+#!/bin/bash
+# Skript:  runms2test
+# Zweck:   Startet kurze Testläufe mit ms2
+
+# Globale Variablen
+SCRIPTNAME=`basename $0`
+WORKDIR=`pwd`
+TARFILE="testcases.tar.gz"
+MS2="$HOME/bin/ms2"
+MS2MPI="$HOME/bin/ms2mpi"
+
+EXIT_SUCCESS=0
+EXIT_FAILURE=1
+EXIT_ERROR=2
+EXIT_BUG=10
+
+# Variablen für Optionsschalter hier mit Default-Werten vorbelegen
+PARALLEL=false
+VERBOSE=false
+
+# Funktionen
+function usage {
+  echo "Usage: $SCRIPTNAME [-h] [-v] [-p #CPUs]" >&2
+  [[ $# -eq 1 ]] && exit $1 || exit $EXIT_FAILURE
+}
+
+# Die Option -h bringt kurze Hilfe
+# -p wählt den parallelen Modus, benötigt als Agument die Anzahl der CPUs
+# -v schaltet in geschwätzigen Modus
+while getopts ':p:vh' OPTION ; do
+  case $OPTION in
+    p)  PARALLEL=true
+        NUMPROCS="$OPTARG"
+        expr $NUMPROCS + 0 >/dev/null 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Anzahl der CPUs muss numerisch sein: $NUMPROCS"
+          usage $EXIT_ERROR
+        elif [ $NUMPROCS -lt 1 ]; then
+          echo "Anzahl der CPUs muss größer 0 sein: $NUMPROCS"
+          usage $EXIT_ERROR
+        fi
+        ;;
+    v)  VERBOSE=true
+        ;;
+    h)  usage $EXIT_SUCCESS
+        ;;
+    \?) echo "Unbekannte Option \"-$OPTARG\"." >&2
+        usage $EXIT_ERROR
+        ;;
+    :)  echo "Option \"-$OPTARG\" benötigt ein Argument." >&2
+        usage $EXIT_ERROR
+        ;;
+    *)  echo "Dies kann eigentlich gar nicht passiert sein...">&2
+        usage $EXIT_BUG
+        ;;
+  esac
+done
+
+if $VERBOSE; then
+  if $PARALLEL; then
+    echo "Parallele Testläufe auf $NUMPROCS CPUs"
+  else
+    echo "Serielle Testläufe"
+  fi
+fi
+
+# Verbrauchte Argumente überspringen
+shift $(($OPTIND-1))
+
+# Test auf weitere Argumente
+if (( $# > 0 )) ; then
+  echo -n "Unbekannte Argumente: $*" >&2
+  usage $EXIT_ERROR
+fi
+
+# Abfrage der aktuellen Maschine
+if [ `uname` == OSF1 ]; then
+  case `hostname` in
+    *.itt.uni-stuttgart.de)  ARCH="itt_alpha"
+                             MS2="$HOME/bin/ms2.alpha"
+                             ;;
+    *)  echo "Unbekanntes System." >&2
+        exit $EXIT_ERROR
+        ;;
+  esac
+else
+  case `hostname -s` in
+    strider)  ARCH="strider"
+              ;;
+    cacau*)   ARCH="cacau"
+              ;;
+    a1)       ARCH="sx8"
+              ;;
+    xc1n*)    ARCH="xc1"
+              ;;
+    master)   ARCH="mozart"
+              ;;
+    *)        if [ `hostname -d` == "itt.uni-stuttgart.de" ]; then
+                ARCH="itt_linux"
+                MS2="$HOME/bin/ms2.linux"
+                MS2MPI="$HOME/bin/ms2mpi.linux"
+              else
+                echo "Unbekanntes System." >&2
+                exit $EXIT_ERROR
+              fi
+              ;;
+  esac
+fi
+
+# Entpacken der Testcases
+if [ ! -r $TARFILE ]; then
+  echo "Datei $TARFILE nicht gefunden oder nicht lesbar."
+  exit $EXIT_ERROR
+fi
+if $VERBOSE; then
+  echo "Entpacke tar-file $TARFILE..."
+  tar -xvzf $TARFILE
+else
+  tar -xzf $TARFILE
+fi
+if [ ! $? -eq 0 ]; then
+  echo "Problem beim Entpacken der Datei $TARFILE."
+  exit $EXIT_ERROR
+fi
+
+# Starten der Testcases je nach System
+case $ARCH in
+  strider)  if $PARALLEL; then
+              NUMNODES=$(((($NUMPROCS-1))/2+1))
+              cat >job.script <<EOT
+#!/bin/sh
+#PBS -N testcases
+#PBS -l nodes=$NUMNODES,walltime=00:10:00
+cd $WORKDIR
+mpiaprun -n $NUMPROCS $MS2MPI MD_CO2.par
+mpiaprun -n $NUMPROCS $MS2MPI MD_mix.rst
+mpiaprun -n $NUMPROCS $MS2MPI MC_R12.par
+mpiaprun -n $NUMPROCS $MS2MPI GE_mix.par
+exit 0
+EOT
+            else
+              cat >job.script <<EOT
+#!/bin/sh
+#PBS -N testcases
+#PBS -l nodes=1,walltime=00:20:00
+cd $WORKDIR
+mpiaprun -n 1 $MS2 MD_CO2.par
+mpiaprun -n 1 $MS2 MD_mix.rst
+mpiaprun -n 1 $MS2 MC_R12.par
+mpiaprun -n 1 $MS2 GE_mix.par
+exit 0
+EOT
+            fi
+            if $VERBOSE; then
+              echo "Datei job.script erstellt:"
+              cat job.script
+            fi
+            qsub job.script
+            exit $?
+            ;;
+  cacau)    if $PARALLEL; then
+              NUMNODES=$(((($NUMPROCS-1))/2+1))
+              if [ ! $NUMPROCS -eq $(($NUMNODES*2)) ]; then
+                NUMPROCS=$(($NUMNODES*2))
+                echo "Anzahl der CPUs auf $NUMPROCS korrigiert (teilbar 2)." >&2
+              fi
+              cat >job.script <<EOT
+#!/bin/sh
+#PBS -N testcases
+#PBS -l nodes=$NUMNODES,walltime=00:10:00
+cd $WORKDIR
+NODES=\`cat \$PBS_NODEFILE \$PBS_NODEFILE |sort\`
+mpirun_ssh -np $NUMPROCS \$NODES $MS2MPI MD_CO2.par
+mpirun_ssh -np $NUMPROCS \$NODES $MS2MPI MD_mix.rst
+mpirun_ssh -np $NUMPROCS \$NODES $MS2MPI MC_R12.par
+mpirun_ssh -np $NUMPROCS \$NODES $MS2MPI GE_mix.par
+exit 0
+EOT
+            else
+              cat >job.script <<EOT
+#!/bin/sh
+#PBS -N testcases
+#PBS -l nodes=1,walltime=00:20:00
+cd $WORKDIR
+NODE=\`head -n 1 \$PBS_NODEFILE\`
+ssh \$NODE "cd $WORKDIR; $MS2 MD_CO2.par"
+ssh \$NODE "cd $WORKDIR; $MS2 MD_mix.rst"
+ssh \$NODE "cd $WORKDIR; $MS2 MC_R12.par"
+ssh \$NODE "cd $WORKDIR; $MS2 GE_mix.par"
+exit 0
+EOT
+            fi
+            if $VERBOSE; then
+              echo "Datei job.script erstellt:"
+              cat job.script
+            fi
+            qsub job.script
+            exit $?
+            ;;
+  sx8)      if $PARALLEL; then
+              if [ $NUMPROCS >= 8 ]; then
+                NUMNODES=$(((($NUMPROCS-1))/8+1))
+                if [ ! $NUMPROCS -eq $(($NUMNODES*8)) ]; then
+                  NUMPROCS=$(($NUMNODES*8))
+                  echo "Anzahl der CPUs auf $NUMPROCS korrigiert (teilbar 8)." >&2
+                fi
+                cat >job.script <<EOT
+#!/usr/bin/ksh
+#PBS -q multi
+#PBS -T mpisx
+#PBS -l cpunum_job=8
+#PBS -b $NUMNODES
+#PBS -l elapstim_req="00:20:00, 00:19:50"
+#PBS -l cputim_job="02:40:00, 02:39:30"
+#PBS -l cputim_prc="02:40:00, 02:39:30"
+#PBS -l memsz_job=1gb
+#PBS -A yyy12756
+#PBS -N testcases
+export MPIPROGINF=YES
+export MPIMULTITASKMIX=NO
+export MPISUSPEND=OFF
+MPIEXPORT="MPIPROGINF MPIMULTITASKMIX MPISUSPEND"
+export MPIEXPORT
+cd $WORKDIR
+mpirun -nn $NUMNODES -nnp 8 $MS2MPI MD_CO2.par
+mpirun -nn $NUMNODES -nnp 8 $MS2MPI MD_mix.rst
+exit 0
+EOT
+              else
+                cat >job.script <<EOT
+#!/usr/bin/ksh
+#PBS -q dq
+#PBS -l cpunum_job=$NUMPROCS
+#PBS -b 1
+#PBS -l elapstim_req="00:20:00, 00:19:50"
+#PBS -l cputim_job="00:10:00, 00:09:50"
+#PBS -l cputim_prc="00:10:00, 00:09:50"
+#PBS -l memsz_job=1gb
+#PBS -A yyy12756
+#PBS -N testcases
+export MPIPROGINF=YES
+export MPIMULTITASKMIX=NO
+export MPISUSPEND=ON
+cd $WORKDIR
+mpirun -np $NUMPROCS $MS2MPI MD_CO2.par
+mpirun -np $NUMPROCS $MS2MPI MD_mix.rst
+exit 0
+EOT
+              fi
+            else
+              cat >job.script <<EOT
+#!/usr/bin/ksh
+#PBS -q dq
+#PBS -l cpunum_job=1
+#PBS -b 1
+#PBS -l elapstim_req="00:20:00, 00:19:50"
+#PBS -l cputim_job="00:10:00, 00:09:50"
+#PBS -l cputim_prc="00:10:00, 00:09:50"
+#PBS -l memsz_job=1gb
+#PBS -A yyy12756
+#PBS -N testcases
+export MPIPROGINF=YES
+export MPIMULTITASKMIX=NO
+export MPISUSPEND=ON
+cd $WORKDIR
+mpirun -np 1 $MS2 MD_CO2.par
+mpirun -np 1 $MS2 MD_mix.rst
+exit 0
+EOT
+            fi
+            if $VERBOSE; then
+              echo "Datei job.script erstellt:"
+              cat job.script
+            fi
+            qsub job.script
+            exit $?
+            ;;
+  xc1)      if $PARALLEL; then
+              cat >job.script <<EOT
+#!/bin/sh
+cd $WORKDIR
+mpirun $MS2MPI MD_CO2.par
+mpirun $MS2MPI MD_mix.rst
+mpirun $MS2MPI MC_R12.par
+mpirun $MS2MPI GE_mix.par
+exit 0
+EOT
+              chmod 700 job.script
+              if $VERBOSE; then
+                echo "Datei job.script erstellt:"
+                cat job.script
+              fi
+              job_submit -t 20 -m 1000 -p $NUMPROCS -c p job.script
+              exit $?
+            else
+              cat >job.script <<EOT
+#!/bin/sh
+cd $WORKDIR
+$MS2 MD_CO2.par
+$MS2 MD_mix.rst
+$MS2 MC_R12.par
+$MS2 GE_mix.par
+exit 0
+EOT
+              chmod 700 job.script
+              if $VERBOSE; then
+                echo "Datei job.script erstellt:"
+                cat job.script
+              fi
+              job_submit -t 20 -m 1000 -p 1 -c p job.script
+              exit $?
+            fi
+            ;;
+  mozart)   if $PARALLEL; then
+              echo "Mozart parallel noch nicht implementiert." >&2
+              exit $EXIT_ERROR
+            else
+              echo "Mozart seriell noch nicht implementiert." >&2
+              exit $EXIT_ERROR
+            fi
+            ;;
+  itt_linux) if $PARALLEL; then
+               cat >job.script <<EOT
+#!/bin/sh
+cd $WORKDIR
+mpirun_rsh -np $NUMPROCS $MS2MPI MD_CO2.par
+mpirun_rsh -np $NUMPROCS $MS2MPI MD_mix.rst
+mpirun_rsh -np $NUMPROCS $MS2MPI MC_R12.par
+mpirun_rsh -np $NUMPROCS $MS2MPI GE_mix.par
+exit 0
+EOT
+             else
+               cat >job.script <<EOT
+#!/bin/sh
+cd $WORKDIR
+$MS2 MD_CO2.par
+$MS2 MD_mix.rst
+$MS2 MC_R12.par
+$MS2 GE_mix.par
+exit 0
+EOT
+             fi
+             chmod 700 job.script
+             if $VERBOSE; then
+               echo "Datei job.script erstellt:"
+               cat job.script
+             fi
+             nohup job.script &
+             exit $?
+             ;;
+  itt_alpha) if $PARALLEL; then
+               echo "Paralleler Lauf nicht möglich auf ITT_Alpha." >&2
+               exit $EXIT_ERROR
+             fi
+             cat >job.script <<EOT
+#!/bin/sh
+cd $WORKDIR
+$MS2 MD_CO2.par
+$MS2 MD_mix.rst
+$MS2 MC_R12.par
+$MS2 GE_mix.par
+exit 0
+EOT
+             chmod 700 job.script
+             if $VERBOSE; then
+               echo "Datei job.script erstellt:"
+               cat job.script
+             fi
+             nohup job.script &
+             exit $?
+             ;;
+  *)         echo "Dies kann eigentlich gar nicht passiert sein...">&2
+             usage $EXIT_BUG
+             ;;
+esac
+
+exit $EXIT_SUCCESS

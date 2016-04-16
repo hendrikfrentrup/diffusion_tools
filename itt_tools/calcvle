@@ -1,0 +1,62 @@
+#!/bin/bash
+PARSCRIPT="res2gepar"
+
+# Check for command line argument
+if [ -z $1 ]; then
+  echo "Usage: $0 <Parameter-File>"
+  echo " <Parameter-File> is the ms2 parameter file (.par)"
+  echo " for the liquid phase run. The parameter file for"
+  echo " the gas phase GE run will be generated automatically."
+  exit -1
+fi
+
+# Check for parameter file
+if [ ! -r $1 ]; then
+  echo "Parameter file $i not readable."
+  exit -1
+fi
+
+# Get system type (Linux, Alpha, etc.)
+SYSTYPE=$( uname )
+case "$SYSTYPE" in
+
+  "Linux" )  # this is standard linux system (32bit, Athlon)
+    MS2BIN="ms2.linux"
+    ;;
+
+  "OSF1"  )  # running on an alpha workstation
+    MS2BIN="ms2.alpha"
+    ;;
+
+  *       )  # what's this? I don't know
+    echo "Unknown system."
+    exit -1
+    ;;
+esac
+
+# Run liquid phase simulation from given parameter file
+$MS2BIN $1
+
+# Check for successful
+
+# Check for result file (.res)
+if [ ! -r ${1%.par}_1.res ]; then
+  echo "Result file ${1%.par}_1.res from liquid phase run not readable."
+  echo "A problem with ${MS2BIN}?"
+  exit -1
+fi
+
+# Generate gas phase parameter file from liquid simulation
+$PARSCRIPT $1 ${1%.par}_1.res > ${1%.par}_ge.par
+
+# Check for parameter file
+if [ ! -r ${1%.par}_ge.par ]; then
+  echo "Parameter file ${1%.par}_ge.par not readable."
+  echo "Unable to start gas phase simulation."
+  exit -1
+fi
+
+# Run gas phase GE simulation
+$MS2BIN ${1%.par}_ge.par
+
+# Done everything.
